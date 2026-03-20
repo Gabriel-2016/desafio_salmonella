@@ -6,9 +6,8 @@
     <meta name="theme-color" content="#166534">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Desafio Salmonella - App</title>
+    <title>Desafio Salmonella - Ranking Global</title>
     
-    <!-- Configuração de PWA (Manifest Inline) -->
     <link rel="manifest" href="data:application/manifest+json,{'name':'Desafio Salmonella','short_name':'Salmonella','start_url':'.','display':'standalone','background_color':'#f0fdf4','theme_color':'#166534'}">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -18,7 +17,6 @@
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f0fdf4;
-            /* Impede o scroll elástico no iOS */
             position: fixed;
             width: 100%;
             height: 100%;
@@ -26,10 +24,7 @@
             touch-action: manipulation;
         }
 
-        .card-anim {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
+        .card-anim { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         .pulse-correct { animation: pulse-green 0.5s; }
         .shake-wrong { animation: shake 0.5s; }
 
@@ -51,12 +46,25 @@
             backdrop-filter: blur(4px);
         }
 
-        /* Ajuste para ecrãs de telemóvel */
         .game-height {
             height: 100dvh;
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #16a34a;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -69,20 +77,22 @@
             <div id="start-screen" class="text-center">
                 <div class="mb-4 text-6xl">🔬</div>
                 <h1 class="text-3xl font-extrabold text-green-800 mb-2">Desafio Salmonella</h1>
-                <p class="text-gray-600 mb-6 text-base">Testa os teus conhecimentos sobre segurança alimentar.</p>
+                <p class="text-gray-600 mb-6 text-base">Testa os teus conhecimentos e compete globalmente!</p>
                 
                 <div class="space-y-3">
                     <input type="text" id="player-name" placeholder="O teu nome" class="w-full p-4 border-2 border-green-100 rounded-xl focus:border-green-500 outline-none text-center text-lg">
                     
-                    <button onclick="startGame()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl transition-all active:scale-95 shadow-lg shadow-green-200">
+                    <button id="btn-start" onclick="startGame()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl transition-all active:scale-95 shadow-lg shadow-green-200 disabled:opacity-50">
                         JOGAR AGORA
                     </button>
 
                     <button onclick="toggleLeaderboard(true)" class="w-full bg-white border-2 border-green-600 text-green-600 font-bold py-3 rounded-xl active:bg-green-50 transition-all flex items-center justify-center gap-2">
-                        🏆 Ranking
+                        🌎 Ranking Global
                     </button>
                 </div>
-                <p class="mt-4 text-[10px] text-gray-400 uppercase font-bold tracking-widest">Versão Mobile App v1.1</p>
+                <div id="auth-status" class="mt-4 text-[10px] text-gray-400 font-bold flex justify-center items-center gap-2">
+                    <div class="loading-spinner"></div> A ligar ao servidor...
+                </div>
             </div>
 
             <!-- Tela de Jogo -->
@@ -98,9 +108,7 @@
 
                 <h2 id="question-text" class="text-xl font-bold text-gray-800 mb-6 leading-tight">Carregando...</h2>
 
-                <div id="options-container" class="space-y-3">
-                    <!-- Botões injetados via JS -->
-                </div>
+                <div id="options-container" class="space-y-3"></div>
             </div>
 
             <!-- Tela Final -->
@@ -109,34 +117,120 @@
                 <div id="final-emoji" class="text-5xl mb-2">🏆</div>
                 <p id="final-message" class="text-base text-gray-600 mb-4 font-medium"></p>
                 <div class="bg-green-50 p-4 rounded-2xl mb-6 border border-green-100">
-                    <span class="block text-[10px] text-green-600 uppercase font-bold tracking-widest mb-1">Pontuação</span>
+                    <span class="block text-[10px] text-green-600 uppercase font-bold tracking-widest mb-1">Pontuação Final</span>
                     <span id="final-score" class="text-5xl font-black text-green-800">0</span>
                 </div>
                 <div class="flex flex-col gap-2">
                     <button onclick="resetGame()" class="w-full bg-green-600 text-white font-bold py-4 rounded-xl active:scale-95 transition-all">
-                        REPETIR
+                        REPETIR JOGO
                     </button>
                     <button onclick="toggleLeaderboard(true)" class="text-green-600 font-semibold py-2">
-                        Ver Ranking
+                        Ver Líderes Globais
                     </button>
                 </div>
             </div>
 
-            <!-- Modal do Ranking -->
+            <!-- Modal do Ranking Global -->
             <div id="leaderboard-modal" class="hidden absolute inset-0 z-50 modal-overlay flex items-center justify-center p-4">
                 <div class="bg-white w-full max-h-[80vh] rounded-2xl shadow-2xl flex flex-col p-6">
                     <div class="flex justify-between items-center mb-4 border-b pb-2">
-                        <h2 class="text-xl font-extrabold text-green-800">🏆 Melhores</h2>
+                        <h2 class="text-xl font-extrabold text-green-800">🌎 Top 10 Global</h2>
                         <button onclick="toggleLeaderboard(false)" class="text-gray-400 text-3xl">&times;</button>
                     </div>
-                    <div id="leaderboard-list" class="flex-1 overflow-y-auto space-y-2 pr-1 text-left"></div>
+                    <div id="leaderboard-list" class="flex-1 overflow-y-auto space-y-2 pr-1 text-left">
+                        <div class="flex justify-center p-10"><div class="loading-spinner"></div></div>
+                    </div>
                     <button onclick="toggleLeaderboard(false)" class="mt-4 w-full bg-gray-100 py-3 rounded-xl font-bold">Fechar</button>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, limit, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Configuração Global (Injetada pelo ambiente)
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'salmonella-quiz-global';
+        
+        // Inicialização
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Estado do Jogo
+        window.gameState = {
+            user: null,
+            score: 0,
+            currentQuestion: 0,
+            playerName: "",
+            leaderboard: []
+        };
+
+        // Autenticação Silenciosa (Regra 3)
+        async function initAuth() {
+            try {
+                await signInAnonymously(auth);
+            } catch (error) {
+                console.error("Erro na autenticação:", error);
+                document.getElementById('auth-status').innerHTML = "⚠️ Erro de ligação.";
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            window.gameState.user = user;
+            if (user) {
+                document.getElementById('auth-status').innerHTML = "✅ Ligado ao Ranking Global";
+                document.getElementById('btn-start').disabled = false;
+                setupLeaderboardListener();
+            }
+        });
+
+        // Ouvinte de Ranking em Tempo Real (Regra 1 e 2)
+        function setupLeaderboardListener() {
+            if (!window.gameState.user) return;
+            
+            const q = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+            
+            onSnapshot(q, (snapshot) => {
+                const data = [];
+                snapshot.forEach(doc => data.push(doc.data()));
+                // Ordenação e filtro em memória (Regra 2)
+                window.gameState.leaderboard = data
+                    .sort((a, b) => b.score - a.score)
+                    .slice(0, 10);
+                
+                if (document.getElementById('leaderboard-modal').classList.contains('hidden') === false) {
+                    renderLeaderboardUI();
+                }
+            }, (error) => {
+                console.error("Erro no Firestore:", error);
+            });
+        }
+
+        // Guardar Pontuação (Regra 1)
+        window.saveScoreToGlobal = async (name, score) => {
+            if (!window.gameState.user) return;
+            try {
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard'), {
+                    name: name,
+                    score: score,
+                    timestamp: Date.now(),
+                    userId: window.gameState.user.uid
+                });
+            } catch (e) {
+                console.error("Erro ao guardar:", e);
+            }
+        };
+
+        initAuth();
+    </script>
+
     <script>
+        // Lógica do Quiz
         const questions = [
             { q: "Qual destes alimentos é o mais comum para a transmissão de Salmonella?", options: ["Ovos crus", "Pão", "Maçãs", "Arroz"], correct: 0, difficulty: "Fácil" },
             { q: "Regra de ouro para evitar a bactéria na cozinha?", options: ["Usar sal", "Cozinhar bem", "Lavar carne crua", "Congelar"], correct: 1, difficulty: "Fácil" },
@@ -149,13 +243,6 @@
             { q: "Período médio de incubação?", options: ["5 min", "6h a 6 dias", "3 meses", "Imediato"], correct: 1, difficulty: "Difícil" }
         ];
 
-        let state = {
-            playerName: "",
-            currentQuestion: 0,
-            score: 0,
-            leaderboard: JSON.parse(localStorage.getItem('salmonella-app-rank')) || []
-        };
-
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
         function playSound(type) {
@@ -165,64 +252,58 @@
                 const gain = audioCtx.createGain();
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
-                if (type === 'correct') {
-                    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
-                    gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
-                    osc.start(); osc.stop(audioCtx.currentTime + 0.1);
-                } else {
-                    osc.frequency.setValueAtTime(150, audioCtx.currentTime);
-                    gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
-                    osc.start(); osc.stop(audioCtx.currentTime + 0.2);
-                }
-            } catch (e) {
-                console.log("Audio not supported");
-            }
+                osc.frequency.setValueAtTime(type === 'correct' ? 600 : 150, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+            } catch (e) {}
         }
 
         function toggleLeaderboard(show) {
             const modal = document.getElementById('leaderboard-modal');
             if (show) {
-                const list = document.getElementById('leaderboard-list');
-                list.innerHTML = '';
-                const sorted = [...state.leaderboard].sort((a,b) => b.score - a.score).slice(0, 10);
-                if(sorted.length === 0) {
-                    list.innerHTML = "<p class='text-center text-gray-400 py-4'>Nenhum registo ainda.</p>";
-                } else {
-                    sorted.forEach((e, i) => {
-                        list.innerHTML += `<div class='flex justify-between p-3 bg-gray-50 rounded-lg text-sm mb-2'><b>${i+1}. ${e.name}</b> <span>${e.score} pts</span></div>`;
-                    });
-                }
+                renderLeaderboardUI();
                 modal.classList.remove('hidden');
             } else modal.classList.add('hidden');
         }
 
+        function renderLeaderboardUI() {
+            const list = document.getElementById('leaderboard-list');
+            list.innerHTML = '';
+            const data = window.gameState.leaderboard;
+            if(!data || data.length === 0) {
+                list.innerHTML = "<p class='text-center text-gray-400 py-4 italic text-sm'>Ainda ninguém pontuou. Sê o primeiro!</p>";
+            } else {
+                data.forEach((e, i) => {
+                    list.innerHTML += `<div class='flex justify-between p-3 bg-gray-50 rounded-lg text-sm mb-2 border border-gray-100'><b>${i+1}. ${e.name}</b> <span class='text-green-600 font-bold'>${e.score} pts</span></div>`;
+                });
+            }
+        }
+
         function startGame() {
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            state.playerName = document.getElementById('player-name').value.trim() || "Jogador";
-            state.currentQuestion = 0;
-            state.score = 0;
+            const nameInput = document.getElementById('player-name').value.trim();
+            window.gameState.playerName = nameInput || "Anónimo";
+            window.gameState.currentQuestion = 0;
+            window.gameState.score = 0;
             document.getElementById('start-screen').classList.add('hidden');
             document.getElementById('quiz-screen').classList.remove('hidden');
             renderQuestion();
         }
 
         function renderQuestion() {
-            const q = questions[state.currentQuestion];
-            const badge = document.getElementById('difficulty-badge');
-            document.getElementById('game-container').classList.remove('pulse-correct', 'shake-wrong');
+            const q = questions[window.gameState.currentQuestion];
+            const container = document.getElementById('game-container');
+            container.classList.remove('pulse-correct', 'shake-wrong');
             
-            badge.innerText = q.difficulty;
-            badge.className = `px-3 py-1 rounded-full text-[10px] font-bold uppercase ${q.difficulty === 'Fácil' ? 'bg-blue-100 text-blue-600' : q.difficulty === 'Médio' ? 'bg-yellow-100 text-yellow-600' : 'bg-red-100 text-red-600'}`;
-            
+            document.getElementById('difficulty-badge').innerText = q.difficulty;
             document.getElementById('question-text').innerText = q.q;
-            document.getElementById('current-score').innerText = state.score;
-            document.getElementById('progress').style.width = `${(state.currentQuestion / questions.length) * 100}%`;
+            document.getElementById('current-score').innerText = window.gameState.score;
+            document.getElementById('progress').style.width = `${(window.gameState.currentQuestion / questions.length) * 100}%`;
 
             const box = document.getElementById('options-container');
             box.innerHTML = '';
             q.options.forEach((opt, idx) => {
                 const btn = document.createElement('button');
-                btn.className = "w-full text-left p-4 rounded-xl border-2 border-gray-100 active:bg-green-50 active:border-green-400 font-medium text-gray-700 text-sm transition-colors";
+                btn.className = "w-full text-left p-4 rounded-xl border-2 border-gray-100 active:bg-green-50 active:border-green-400 font-medium text-gray-700 text-sm transition-all";
                 btn.innerText = opt;
                 btn.onclick = () => check(idx);
                 box.appendChild(btn);
@@ -230,24 +311,32 @@
         }
 
         function check(choice) {
-            const q = questions[state.currentQuestion];
+            const q = questions[window.gameState.currentQuestion];
+            const container = document.getElementById('game-container');
+            
             if (choice === q.correct) {
-                state.score += (q.difficulty === 'Fácil' ? 100 : q.difficulty === 'Médio' ? 250 : 500);
+                window.gameState.score += (q.difficulty === 'Fácil' ? 100 : q.difficulty === 'Médio' ? 250 : 500);
                 playSound('correct');
-                document.getElementById('game-container').classList.add('pulse-correct');
+                container.classList.add('pulse-correct');
             } else {
                 playSound('wrong');
-                document.getElementById('game-container').classList.add('shake-wrong');
+                container.classList.add('shake-wrong');
             }
-            setTimeout(() => {
-                state.currentQuestion++;
-                if (state.currentQuestion < questions.length) renderQuestion();
-                else {
+
+            setTimeout(async () => {
+                window.gameState.currentQuestion++;
+                if (window.gameState.currentQuestion < questions.length) {
+                    renderQuestion();
+                } else {
                     document.getElementById('quiz-screen').classList.add('hidden');
                     document.getElementById('end-screen').classList.remove('hidden');
-                    document.getElementById('final-score').innerText = state.score;
-                    state.leaderboard.push({name: state.playerName, score: state.score});
-                    localStorage.setItem('salmonella-app-rank', JSON.stringify(state.leaderboard));
+                    document.getElementById('final-score').innerText = window.gameState.score;
+                    document.getElementById('final-message').innerText = window.gameState.score >= 1500 ? "Incrível! És um mestre da biossegurança!" : "Bom esforço! Continua a aprender.";
+                    
+                    // Guardar no Ranking Global
+                    if (window.saveScoreToGlobal) {
+                        await window.saveScoreToGlobal(window.gameState.playerName, window.gameState.score);
+                    }
                 }
             }, 600);
         }
