@@ -82,16 +82,16 @@
                 <div class="space-y-3">
                     <input type="text" id="player-name" placeholder="O teu nome" class="w-full p-4 border-2 border-green-100 rounded-xl focus:border-green-500 outline-none text-center text-lg">
                     
-                    <button id="btn-start" onclick="startGame()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl transition-all active:scale-95 shadow-lg shadow-green-200 disabled:opacity-50">
+                    <button id="btn-start" onclick="startGame()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl transition-all active:scale-95 shadow-lg shadow-green-200">
                         JOGAR AGORA
                     </button>
 
-                    <button onclick="toggleLeaderboard(true)" class="w-full bg-white border-2 border-green-600 text-green-600 font-bold py-3 rounded-xl active:bg-green-50 transition-all flex items-center justify-center gap-2">
+                    <button id="btn-leaderboard" onclick="toggleLeaderboard(true)" class="w-full bg-white border-2 border-green-600 text-green-600 font-bold py-3 rounded-xl active:bg-green-50 transition-all flex items-center justify-center gap-2">
                         🌎 Ranking Global
                     </button>
                 </div>
                 <div id="auth-status" class="mt-4 text-[10px] text-gray-400 font-bold flex justify-center items-center gap-2">
-                    <div class="loading-spinner"></div> A ligar ao servidor...
+                    <div class="loading-spinner"></div> A verificar ligação...
                 </div>
             </div>
 
@@ -149,71 +149,84 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, query, limit, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Configuração Global (Injetada pelo ambiente)
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'salmonella-quiz-global';
-        
-        // Inicialização
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
-        // Estado do Jogo
+        // Estado do Jogo Global
         window.gameState = {
             user: null,
             score: 0,
             currentQuestion: 0,
             playerName: "",
-            leaderboard: []
+            leaderboard: [],
+            isOnline: false
         };
 
-        // Autenticação Silenciosa (Regra 3)
-        async function initAuth() {
+        let db, auth;
+
+        async function startFirebase() {
             try {
-                await signInAnonymously(auth);
+                // Tenta obter config do ambiente ou falha silenciosamente
+                if (typeof __firebase_config === 'undefined') {
+                    throw new Error("Ambiente sem Firebase");
+                }
+
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'salmonella-quiz-global';
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // Regra 3: Auth Antes de Queries
+                const initAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                };
+
+                await initAuth();
+
+                onAuthStateChanged(auth, (user) => {
+                    window.gameState.user = user;
+                    if (user) {
+                        window.gameState.isOnline = true;
+                        document.getElementById('auth-status').innerHTML = "✅ Ligado ao Ranking Global";
+                        setupLeaderboardListener(db, appId);
+                    }
+                });
+
             } catch (error) {
-                console.error("Erro na autenticação:", error);
-                document.getElementById('auth-status').innerHTML = "⚠️ Erro de ligação.";
+                console.warn("Modo Offline Ativado:", error.message);
+                document.getElementById('auth-status').innerHTML = "📴 Modo Local (Sem Ranking Global)";
+                window.gameState.isOnline = false;
             }
         }
 
-        onAuthStateChanged(auth, (user) => {
-            window.gameState.user = user;
-            if (user) {
-                document.getElementById('auth-status').innerHTML = "✅ Ligado ao Ranking Global";
-                document.getElementById('btn-start').disabled = false;
-                setupLeaderboardListener();
-            }
-        });
-
-        // Ouvinte de Ranking em Tempo Real (Regra 1 e 2)
-        function setupLeaderboardListener() {
-            if (!window.gameState.user) return;
-            
+        function setupLeaderboardListener(db, appId) {
+            // Regra 1: Caminho estrito
             const q = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
             
+            // Regra 2: Sem queries complexas, filtro em JS
             onSnapshot(q, (snapshot) => {
                 const data = [];
                 snapshot.forEach(doc => data.push(doc.data()));
-                // Ordenação e filtro em memória (Regra 2)
                 window.gameState.leaderboard = data
                     .sort((a, b) => b.score - a.score)
                     .slice(0, 10);
                 
-                if (document.getElementById('leaderboard-modal').classList.contains('hidden') === false) {
-                    renderLeaderboardUI();
+                if (!document.getElementById('leaderboard-modal').classList.contains('hidden')) {
+                    window.renderLeaderboardUI();
                 }
             }, (error) => {
-                console.error("Erro no Firestore:", error);
+                console.error("Erro Firestore:", error);
             });
         }
 
-        // Guardar Pontuação (Regra 1)
         window.saveScoreToGlobal = async (name, score) => {
-            if (!window.gameState.user) return;
+            if (!window.gameState.isOnline || !window.gameState.user) return;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'salmonella-quiz-global';
             try {
                 await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard'), {
                     name: name,
@@ -222,15 +235,15 @@
                     userId: window.gameState.user.uid
                 });
             } catch (e) {
-                console.error("Erro ao guardar:", e);
+                console.error("Erro ao gravar:", e);
             }
         };
 
-        initAuth();
+        startFirebase();
     </script>
 
     <script>
-        // Lógica do Quiz
+        // Lógica do Quiz e UI
         const questions = [
             { q: "Qual destes alimentos é o mais comum para a transmissão de Salmonella?", options: ["Ovos crus", "Pão", "Maçãs", "Arroz"], correct: 0, difficulty: "Fácil" },
             { q: "Regra de ouro para evitar a bactéria na cozinha?", options: ["Usar sal", "Cozinhar bem", "Lavar carne crua", "Congelar"], correct: 1, difficulty: "Fácil" },
@@ -261,23 +274,29 @@
         function toggleLeaderboard(show) {
             const modal = document.getElementById('leaderboard-modal');
             if (show) {
-                renderLeaderboardUI();
+                window.renderLeaderboardUI();
                 modal.classList.remove('hidden');
             } else modal.classList.add('hidden');
         }
 
-        function renderLeaderboardUI() {
+        window.renderLeaderboardUI = function() {
             const list = document.getElementById('leaderboard-list');
             list.innerHTML = '';
+            
+            if (!window.gameState.isOnline) {
+                list.innerHTML = "<p class='text-center text-red-400 py-4 text-sm'>Ranking Global indisponível no modo local.</p>";
+                return;
+            }
+
             const data = window.gameState.leaderboard;
             if(!data || data.length === 0) {
-                list.innerHTML = "<p class='text-center text-gray-400 py-4 italic text-sm'>Ainda ninguém pontuou. Sê o primeiro!</p>";
+                list.innerHTML = "<p class='text-center text-gray-400 py-4 italic text-sm'>A carregar dados ou sem recordes...</p>";
             } else {
                 data.forEach((e, i) => {
                     list.innerHTML += `<div class='flex justify-between p-3 bg-gray-50 rounded-lg text-sm mb-2 border border-gray-100'><b>${i+1}. ${e.name}</b> <span class='text-green-600 font-bold'>${e.score} pts</span></div>`;
                 });
             }
-        }
+        };
 
         function startGame() {
             const nameInput = document.getElementById('player-name').value.trim();
@@ -333,7 +352,6 @@
                     document.getElementById('final-score').innerText = window.gameState.score;
                     document.getElementById('final-message').innerText = window.gameState.score >= 1500 ? "Incrível! És um mestre da biossegurança!" : "Bom esforço! Continua a aprender.";
                     
-                    // Guardar no Ranking Global
                     if (window.saveScoreToGlobal) {
                         await window.saveScoreToGlobal(window.gameState.playerName, window.gameState.score);
                     }
